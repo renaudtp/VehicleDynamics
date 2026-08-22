@@ -97,3 +97,65 @@ makes `D` concave in `Fz` when set above zero.
 3. Add a longitudinal force model (engine torque → wheel torque → Fx).
 4. Port to Unity's `FixedUpdate` loop driving `Rigidbody.AddForceAtPosition`
    at each of the four contact points.
+
+---
+
+# Step 3 — Fitting against a real published tire dataset
+
+## Files
+- `reference_tire.py` — the real Bakker/Pacejka/Nyborg (1987) Fy formula
+  (SAE Paper 870421 coefficients, as reproduced in a Stanford course note
+  citing that paper). This is a real fitted passenger-car tire — **not**
+  off-road, but it's real measured-tire behavior rather than assumed
+  constants, which is what this step needed.
+- `fit_tire.py` — fits `tire_models.PacejkaTireModel`'s (B, C, E, mu,
+  load_sensitivity) against the reference tire via `scipy.optimize.curve_fit`
+  across a 2-8 kN load range and ±15° slip angle. Run with
+  `python fit_tire.py`.
+
+## Result
+```
+B = 7.635, C = 0.855, E = 0.169, mu = 1.840, load_sensitivity = 0.2803
+(Fz_nom fixed at 4000 N)
+RMSE across full grid: 396 N (3.4% of data range)
+```
+The fitted `load_sensitivity ≈ 0.28` is in the same neighborhood as the
+`≈0.15` estimated by hand from Milliken's race-tire data in the previous
+step — different tire, same real phenomenon, similar order of magnitude.
+
+## Where the fit is trustworthy and where it isn't
+Overall RMSE (3.4%) looks fine, but it's not uniform — per-load RMSE
+ranges from 170N (mid-loads, 5-6kN) to ~500N (both extremes, 2kN and
+8kN). The comparison plot shows why: the real tire's saturation point
+and post-peak shape *change* with load (it saturates earlier and flatter
+at low load), while this simplified model only lets the **peak** (`D`)
+vary with load — `B`, `C`, `E` are fit as single global constants. At
+mid-loads that's a good approximation; at the load extremes it visibly
+isn't (the fitted curve keeps climbing at 2kN instead of plateauing like
+the real tire does).
+
+**Practical takeaway:** trust this fit most for loads in roughly the
+3-7kN per-tire range (normal operating loads for the vehicle parameters
+used in steps 1-2), and treat results at very light or very heavy corner
+loads — exactly the loads produced by *large* weight transfer, off-road
+articulation, or a wheel nearly lifting — with real skepticism. If that
+matters for your use case, the fix is a load-dependent `B`/`E` (matching
+the real formula's structure) rather than a global fit, which is a
+natural next refinement rather than a fix to a bug.
+
+## Honest limitation carried over from the last two steps
+This is real tire data, but it's a dry-pavement passenger tire from the
+1980s — still not off-road. Nothing in this step changes the earlier
+conclusion: getting *off-road* accuracy requires the terramechanics model
+(Bekker/Wong), not further tuning of a hard-surface Pacejka fit. What
+this step does provide is a real, defensible baseline for the on-road
+portion of the sim (and for validating the terrain model against, once
+built — you'll want "hard surface = matches this fit" as a sanity check).
+
+## Next steps
+1. Terramechanics (Bekker/Wong pressure-sinkage) for deformable terrain
+   — the actual off-road differentiator.
+2. Load-dependent `B`/`E` in `PacejkaTireModel`, if accuracy at load
+   extremes turns out to matter for your test scenarios.
+3. Add a longitudinal force model (engine torque → wheel torque → Fx).
+4. Port to Unity's `FixedUpdate` loop.
