@@ -45,21 +45,37 @@ class PacejkaTireModel:
     """Simplified Pacejka '94-style Magic Formula.
 
     F = D * sin(C * atan(B*x - E*(B*x - atan(B*x))))
-    D = mu * Fz   (peak force scales with normal load and friction)
+    D = mu * Fz * (1 - load_sensitivity * Fz / Fz_nom)
 
     Default B, C, E are representative passenger-tire values, NOT a
     fitted dataset for a real tire. Treat them as tunable parameters.
+
+    load_sensitivity (default 0.0): with the default, D is exactly linear
+    in Fz, which is what step-1 validation used — leave it at 0.0 to
+    reproduce those results exactly. Set > 0 to model real tire "load
+    sensitivity" (peak grip grows sub-linearly with load — a tire loaded
+    to 2x doesn't produce 2x the force), which is what makes lateral load
+    transfer in the 4-wheel model actually change total available grip
+    instead of being a wash. Fz_nom is the reference load [N] the
+    sensitivity term is normalized against (roughly the tire's static
+    load is a reasonable starting point).
     """
 
-    def __init__(self, B=10.0, C=1.9, E=0.97, mu=1.0):
+    def __init__(self, B=10.0, C=1.9, E=0.97, mu=1.0,
+                 load_sensitivity=0.0, Fz_nom=4000.0):
         self.B = B
         self.C = C
         self.E = E
         self.mu = mu
+        self.load_sensitivity = load_sensitivity
+        self.Fz_nom = Fz_nom
+
+    def _peak(self, Fz):
+        return self.mu * Fz * (1.0 - self.load_sensitivity * Fz / self.Fz_nom)
 
     def _magic_formula(self, x, Fz):
         B, C, E = self.B, self.C, self.E
-        D = self.mu * Fz
+        D = self._peak(Fz)
         Bx = B * x
         return D * np.sin(C * np.arctan(Bx - E * (Bx - np.arctan(Bx))))
 
